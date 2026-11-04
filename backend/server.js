@@ -46,14 +46,40 @@ app.get('/api/health', (req, res) => {
 });
 
 // ─── Serve Frontend Static Files in Production ────────────────────────────────
-const frontendDist = path.join(__dirname, '../frontend/dist');
-if (fs.existsSync(frontendDist)) {
-  app.use(express.static(frontendDist));
+const distCandidates = [
+  path.join(__dirname, '../dist'),
+  path.join(__dirname, '../frontend/dist')
+];
+
+let staticDir = null;
+for (const cand of distCandidates) {
+  if (fs.existsSync(path.join(cand, 'index.html'))) {
+    staticDir = cand;
+    break;
+  }
+}
+
+if (staticDir) {
+  app.use(express.static(staticDir));
   app.get('*', (req, res, next) => {
     if (req.originalUrl.startsWith('/api')) {
       return next();
     }
-    res.sendFile(path.join(frontendDist, 'index.html'));
+    res.sendFile(path.join(staticDir, 'index.html'));
+  });
+} else {
+  // If static directory not bundled in serverless function, return 200 API status on /
+  app.get('/', (req, res) => {
+    res.status(200).json({
+      success: true,
+      message: 'Cafeteria API is running 🍽️',
+      status: 'online',
+      endpoints: {
+        health: '/api/health',
+        menu: '/api/menu',
+        slots: '/api/slots'
+      }
+    });
   });
 }
 

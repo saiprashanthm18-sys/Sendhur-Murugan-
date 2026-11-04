@@ -8,7 +8,7 @@
     "dev": "concurrently \"npm run server\" \"npm run client\"",
     "start": "concurrently \"npm --prefix backend start\" \"npm --prefix frontend run preview\"",
     "seed": "node backend/seedData.js",
-    "build": "npm --prefix frontend run build"
+    "build": "node scripts/build.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

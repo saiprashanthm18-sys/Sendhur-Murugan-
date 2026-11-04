@@ -4,6 +4,9 @@ const cors = require('cors');
 const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
 
+const path = require('path');
+const fs = require('fs');
+
 // Route imports
 const authRoutes = require('./routes/auth');
 const menuRoutes = require('./routes/menu');
@@ -14,8 +17,21 @@ const adminRoutes = require('./routes/admin');
 const app = express();
 
 // ─── Middleware ───────────────────────────────────────────────────────────────
-app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 app.use(express.json());
+
+// Auto-connect DB for serverless environments
+app.use(async (req, res, next) => {
+  if (req.originalUrl.startsWith('/api')) {
+    try {
+      await connectDB();
+    } catch (_) {}
+  }
+  next();
+});
 
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
@@ -29,7 +45,19 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ success: true, message: 'Cafeteria API is running 🍽️' });
 });
 
-// 404 handler for unknown routes
+// ─── Serve Frontend Static Files in Production ────────────────────────────────
+const frontendDist = path.join(__dirname, '../frontend/dist');
+if (fs.existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (req, res, next) => {
+    if (req.originalUrl.startsWith('/api')) {
+      return next();
+    }
+    res.sendFile(path.join(frontendDist, 'index.html'));
+  });
+}
+
+// 404 handler for unknown API routes
 app.use((req, res) => {
   res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
@@ -70,10 +98,14 @@ const startServer = async () => {
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📌 Environment: ${process.env.NODE_ENV}`);
+    console.log(`📌 Environment: ${process.env.NODE_ENV || 'development'}`);
   });
 };
 
-startServer();
+if (require.main === module) {
+  startServer();
+} else {
+  connectDB().catch(console.error);
+}
 
 module.exports = app;

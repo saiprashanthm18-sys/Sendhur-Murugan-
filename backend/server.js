@@ -1,9 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const connectDB = require('./config/db');
 const errorHandler = require('./middleware/errorHandler');
-
 const path = require('path');
 const fs = require('fs');
 
@@ -23,16 +21,6 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Auto-connect DB for serverless environments
-app.use(async (req, res, next) => {
-  if (req.originalUrl.startsWith('/api')) {
-    try {
-      await connectDB();
-    } catch (_) {}
-  }
-  next();
-});
-
 // ─── Routes ──────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/menu', menuRoutes);
@@ -42,7 +30,11 @@ app.use('/api/admin', adminRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.status(200).json({ success: true, message: 'Cafeteria API is running 🍽️' });
+  res.status(200).json({
+    success: true,
+    message: 'Cafeteria API is running (Supabase Edition) 🍽️',
+    database: process.env.SUPABASE_URL ? 'Supabase PostgreSQL' : 'In-Memory / Local'
+  });
 });
 
 // ─── Serve Frontend Static Files in Production ────────────────────────────────
@@ -72,12 +64,14 @@ if (staticDir) {
   app.get('/', (req, res) => {
     res.status(200).json({
       success: true,
-      message: 'Cafeteria API is running 🍽️',
+      message: 'Cafeteria API is running (Supabase Edition) 🍽️',
       status: 'online',
       endpoints: {
         health: '/api/health',
         menu: '/api/menu',
-        slots: '/api/slots'
+        slots: '/api/slots',
+        auth: '/api/auth',
+        orders: '/api/orders'
       }
     });
   });
@@ -91,47 +85,14 @@ app.use((req, res) => {
 // ─── Global Error Handler ─────────────────────────────────────────────────────
 app.use(errorHandler);
 
-// ─── Seed default pickup slots if none exist ──────────────────────────────────
-const seedDefaultSlots = async () => {
-  try {
-    const PickupSlot = require('./models/PickupSlot');
-    const today = new Date().toISOString().split('T')[0];
-    const existing = await PickupSlot.countDocuments({ date: today });
-
-    if (existing === 0) {
-      const slotTimes = [
-        '12:00 PM', '12:15 PM', '12:30 PM', '12:45 PM',
-        '1:00 PM',  '1:15 PM',  '1:30 PM',  '1:45 PM',  '2:00 PM',
-      ];
-
-      const slots = slotTimes.map((time) => ({ time, maxCapacity: 20, date: today }));
-      await PickupSlot.insertMany(slots);
-      console.log(`✅ Seeded ${slots.length} default pickup slots for ${today}`);
-    } else {
-      console.log(`ℹ️  ${existing} pickup slot(s) already exist for today`);
-    }
-  } catch (err) {
-    console.error('⚠️  Failed to seed pickup slots:', err.message);
-  }
-};
-
-// ─── Start Server ─────────────────────────────────────────────────────────────
+// ─── Start Server (when run directly with node server.js) ─────────────────────
 const PORT = process.env.PORT || 5000;
 
-const startServer = async () => {
-  await connectDB();
-  await seedDefaultSlots();
-
-  app.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    console.log(`📌 Environment: ${process.env.NODE_ENV || 'development'}`);
-  });
-};
-
 if (require.main === module) {
-  startServer();
-} else {
-  connectDB().catch(console.error);
+  app.listen(PORT, () => {
+    console.log(`🚀 Cafeteria Server running on http://localhost:${PORT}`);
+    console.log(`📌 Database: ${process.env.SUPABASE_URL ? 'Supabase' : 'In-Memory'}`);
+  });
 }
 
 module.exports = app;

@@ -1,6 +1,4 @@
-const Order = require('../models/Order');
-const PickupSlot = require('../models/PickupSlot');
-const MenuItem = require('../models/MenuItem');
+const dbService = require('../services/dbService');
 
 /**
  * @route   POST /api/orders
@@ -21,7 +19,7 @@ const createOrder = async (req, res, next) => {
     }
 
     // Validate pickup slot
-    const slot = await PickupSlot.findById(resolvedSlotId);
+    const slot = await dbService.getPickupSlotById(resolvedSlotId);
     if (!slot || !slot.isActive) {
       res.status(400);
       throw new Error('Invalid or inactive pickup slot');
@@ -31,18 +29,18 @@ const createOrder = async (req, res, next) => {
       throw new Error('Selected pickup slot is full. Please choose another slot.');
     }
 
-    // Validate each item and build order items array
+    // Validate each item and calculate total
     let totalAmount = 0;
     const orderItems = [];
 
     for (const item of items) {
-      const resolvedMenuItemId = item.menuItemId || item.menuItem || item._id;
+      const resolvedMenuItemId = item.menuItemId || item.menuItem || item._id || item.id;
       if (!resolvedMenuItemId || !item.quantity || item.quantity < 1) {
         res.status(400);
         throw new Error('Each item must have a valid menuItemId and quantity');
       }
 
-      const menuItem = await MenuItem.findById(resolvedMenuItemId);
+      const menuItem = await dbService.getMenuItemById(resolvedMenuItemId);
       if (!menuItem || menuItem.isHidden) {
         res.status(400);
         throw new Error(`Menu item not found: ${resolvedMenuItemId}`);
@@ -52,44 +50,40 @@ const createOrder = async (req, res, next) => {
         throw new Error(`Menu item '${menuItem.name}' is currently not available`);
       }
 
-      const lineTotal = menuItem.price * item.quantity;
+      const lineTotal = Number(menuItem.price) * item.quantity;
       totalAmount += lineTotal;
 
       orderItems.push({
-        menuItem: menuItem._id,
+        menuItem: { id: menuItem.id, _id: menuItem.id, name: menuItem.name, price: menuItem.price, image: menuItem.image },
         name: menuItem.name,
         price: menuItem.price,
         quantity: item.quantity,
       });
     }
 
-    // Create order
-    const order = await Order.create({
-      student: req.user._id,
+    // Create order in Supabase
+    const order = await dbService.createOrder({
+      student: {
+        id: req.user.id || req.user._id,
+        _id: req.user.id || req.user._id,
+        name: req.user.name,
+        email: req.user.email,
+        studentId: req.user.studentId || ''
+      },
       items: orderItems,
-      pickupSlot: slot._id,
+      pickupSlot: { id: slot.id, _id: slot.id, time: slot.time },
       pickupTime: slot.time,
       totalAmount,
-      specialInstructions: specialInstructions || '',
-      statusHistory: [
-        { status: 'pending', timestamp: new Date(), updatedBy: req.user._id },
-      ],
+      specialInstructions: specialInstructions || ''
     });
 
     // Increment slot bookings
-    slot.currentBookings += 1;
-    await slot.save();
-
-    // Populate and return
-    const populated = await Order.findById(order._id)
-      .populate('student', 'name email studentId')
-      .populate('pickupSlot')
-      .populate('items.menuItem', 'name price image');
+    await dbService.incrementSlotBookings(slot.id, 1);
 
     res.status(201).json({
       success: true,
       message: `Order #${order.orderNumber} placed successfully`,
-      data: populated,
+      data: order,
     });
   } catch (err) {
     next(err);
@@ -102,10 +96,8 @@ const createOrder = async (req, res, next) => {
  */
 const getMyOrders = async (req, res, next) => {
   try {
-    const orders = await Order.find({ student: req.user._id })
-      .populate('pickupSlot')
-      .populate('items.menuItem', 'name price image')
-      .sort({ createdAt: -1 });
+    const studentId = req.user.id || req.user._id;
+    const orders = await dbService.getOrdersByStudent(studentId);
 
     res.status(200).json({
       success: true,
@@ -123,22 +115,17 @@ const getMyOrders = async (req, res, next) => {
  */
 const getOrderById = async (req, res, next) => {
   try {
-    const order = await Order.findById(req.params.id)
-      .populate('student', 'name email studentId')
-      .populate('pickupSlot')
-      .populate('items.menuItem', 'name price image')
-      .populate('statusHistory.updatedBy', 'name role');
+    const order = await dbService.getOrderById(req.params.id);
 
     if (!order) {
       res.status(404);
       throw new Error('Order not found');
     }
 
-    // Students can only view their own orders; admins can view all
-    if (
-      req.user.role !== 'admin' &&
-      order.student._id.toString() !== req.user._id.toString()
-    ) {
+    const currentUserId = req.user.id || req.user._id;
+    const orderStudentId = order.student?.id || order.student?._id;
+
+    if (req.user.role !== 'admin' && orderStudentId !== currentUserId) {
       res.status(403);
       throw new Error('Not authorized to view this order');
     }
@@ -155,14 +142,17 @@ const getOrderById = async (req, res, next) => {
  */
 const cancelOrder = async (req, res, next) => {
   try {
-    const order = await Order.findById(req.params.id);
+    const order = await dbService.getOrderById(req.params.id);
 
     if (!order) {
       res.status(404);
       throw new Error('Order not found');
     }
 
-    if (order.student.toString() !== req.user._id.toString()) {
+    const currentUserId = req.user.id || req.user._id;
+    const orderStudentId = order.student?.id || order.student?._id;
+
+    if (orderStudentId !== currentUserId) {
       res.status(403);
       throw new Error('Not authorized to cancel this order');
     }
@@ -172,23 +162,18 @@ const cancelOrder = async (req, res, next) => {
       throw new Error(`Cannot cancel order with status '${order.status}'. Only pending orders can be cancelled.`);
     }
 
-    order.status = 'cancelled';
-    order.statusHistory.push({
-      status: 'cancelled',
-      timestamp: new Date(),
-      updatedBy: req.user._id,
-    });
-    await order.save();
+    const updated = await dbService.updateOrderStatus(order.id, 'cancelled', req.user.name || 'Student');
 
-    // Decrement slot bookings
-    await PickupSlot.findByIdAndUpdate(order.pickupSlot, {
-      $inc: { currentBookings: -1 },
-    });
+    // Decrement slot booking if slot was linked
+    const slotId = order.pickupSlot?.id || order.pickupSlot?._id;
+    if (slotId) {
+      await dbService.incrementSlotBookings(slotId, -1);
+    }
 
     res.status(200).json({
       success: true,
       message: `Order #${order.orderNumber} cancelled successfully`,
-      data: order,
+      data: updated,
     });
   } catch (err) {
     next(err);

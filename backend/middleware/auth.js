@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const dbService = require('../services/dbService');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'cafeteria_jwt_secret_key_2024';
 
 /**
  * protect — verify JWT token from Authorization header (Bearer <token>)
@@ -20,12 +22,13 @@ const protect = async (req, res, next) => {
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id).select('-password');
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const user = await dbService.findUserById(decoded.id);
     if (!user) {
       return res.status(401).json({ success: false, message: 'User not found, token invalid' });
     }
-    req.user = user;
+    const { password, ...safeUser } = user;
+    req.user = safeUser;
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Not authorized, token failed' });

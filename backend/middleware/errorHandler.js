@@ -12,11 +12,10 @@ const errorHandler = (err, req, res, next) => {
     message = `Resource not found (invalid ID: ${err.value})`;
   }
 
-  // Mongoose duplicate key
-  if (err.code === 11000) {
+  // Postgres / Supabase duplicate key or Mongoose duplicate key
+  if (err.code === '23505' || err.code === 11000) {
     statusCode = 400;
-    const field = Object.keys(err.keyValue || {})[0];
-    message = `Duplicate field value: '${field}' already exists`;
+    message = 'Duplicate value: this record or email already exists';
   }
 
   // Mongoose validation error

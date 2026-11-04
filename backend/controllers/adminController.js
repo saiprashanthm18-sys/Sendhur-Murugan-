@@ -1,5 +1,4 @@
-const Order = require('../models/Order');
-const PickupSlot = require('../models/PickupSlot');
+const dbService = require('../services/dbService');
 
 /**
  * @route   GET /api/admin/orders
@@ -8,27 +7,11 @@ const PickupSlot = require('../models/PickupSlot');
  */
 const getAllOrders = async (req, res, next) => {
   try {
-    const { status, date } = req.query;
-    const filter = {};
-
-    if (status) {
-      filter.status = status;
-    }
-
-    if (date) {
-      // Filter by createdAt date
-      const start = new Date(date);
-      const end = new Date(date);
-      end.setDate(end.getDate() + 1);
-      filter.createdAt = { $gte: start, $lt: end };
-    }
-
-    const orders = await Order.find(filter)
-      .populate('student', 'name email studentId')
-      .populate('pickupSlot')
-      .populate('items.menuItem', 'name price image')
-      .populate('statusHistory.updatedBy', 'name role')
-      .sort({ createdAt: -1 });
+    const { status, limit } = req.query;
+    const orders = await dbService.getAllOrders({
+      status,
+      limit: limit ? Number(limit) : 100
+    });
 
     res.status(200).json({
       success: true,
@@ -54,39 +37,26 @@ const updateOrderStatus = async (req, res, next) => {
       throw new Error(`Invalid status. Must be one of: ${allowedStatuses.join(', ')}`);
     }
 
-    const order = await Order.findById(req.params.id);
+    const order = await dbService.getOrderById(req.params.id);
     if (!order) {
       res.status(404);
       throw new Error('Order not found');
     }
 
-    const previousStatus = order.status;
-    order.status = status;
-    order.statusHistory.push({
-      status,
-      timestamp: new Date(),
-      updatedBy: req.user._id,
-    });
+    const updated = await dbService.updateOrderStatus(order.id, status, req.user?.name || 'Staff');
 
-    await order.save();
-
-    // If admin cancels, decrement slot
-    if (status === 'cancelled' && previousStatus !== 'cancelled') {
-      await PickupSlot.findByIdAndUpdate(order.pickupSlot, {
-        $inc: { currentBookings: -1 },
-      });
+    // If order is cancelled, decrement slot booking
+    if (status === 'cancelled' && order.status !== 'cancelled') {
+      const slotId = order.pickupSlot?.id || order.pickupSlot?._id;
+      if (slotId) {
+        await dbService.incrementSlotBookings(slotId, -1);
+      }
     }
-
-    const populated = await Order.findById(order._id)
-      .populate('student', 'name email studentId')
-      .populate('pickupSlot')
-      .populate('items.menuItem', 'name price image')
-      .populate('statusHistory.updatedBy', 'name role');
 
     res.status(200).json({
       success: true,
       message: `Order #${order.orderNumber} status updated to '${status}'`,
-      data: populated,
+      data: updated,
     });
   } catch (err) {
     next(err);
@@ -99,19 +69,11 @@ const updateOrderStatus = async (req, res, next) => {
  */
 const getStats = async (req, res, next) => {
   try {
-    const [total, pending, accepted, preparing, ready, completed, cancelled] = await Promise.all([
-      Order.countDocuments(),
-      Order.countDocuments({ status: 'pending' }),
-      Order.countDocuments({ status: 'accepted' }),
-      Order.countDocuments({ status: 'preparing' }),
-      Order.countDocuments({ status: 'ready' }),
-      Order.countDocuments({ status: 'completed' }),
-      Order.countDocuments({ status: 'cancelled' }),
-    ]);
+    const stats = await dbService.getStats();
 
     res.status(200).json({
       success: true,
-      data: { total, pending, accepted, preparing, ready, completed, cancelled },
+      data: stats,
     });
   } catch (err) {
     next(err);
@@ -125,7 +87,7 @@ const getStats = async (req, res, next) => {
 const getPickupSlots = async (req, res, next) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const slots = await PickupSlot.find({ date: today, isActive: true }).sort({ time: 1 });
+    const slots = await dbService.getPickupSlots(today);
 
     res.status(200).json({
       success: true,
@@ -144,14 +106,11 @@ const getPickupSlots = async (req, res, next) => {
 const resetDailySlots = async (req, res, next) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const result = await PickupSlot.updateMany(
-      { date: today },
-      { $set: { currentBookings: 0 } }
-    );
+    await dbService.resetDailySlots(today);
 
     res.status(200).json({
       success: true,
-      message: `Reset ${result.modifiedCount} slot(s) for ${today}`,
+      message: `Pickup slots reset for ${today}`,
     });
   } catch (err) {
     next(err);

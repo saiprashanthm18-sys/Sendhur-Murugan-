@@ -1,36 +1,55 @@
 # 🍽️ Campus Cafeteria Pre-Order & Queue Management System
 
-A high-performance full-stack MERN (MongoDB, Express.js, React.js, Node.js) web application architected to minimize physical cafeteria queues, reduce student wait times, and streamline kitchen operations during peak campus meal hours.
+A high-performance full-stack web application powered by **React.js, Node.js/Express, and Supabase (PostgreSQL)** architected to minimize physical cafeteria queues, reduce student wait times, and streamline kitchen operations during peak campus meal hours.
 
 ---
 
 ## 🏗️ System Architecture & Tech Stack
 
 ```
-                              ┌─────────────────────────────────────┐
-                              │     React.js Frontend (Vite)        │
-                              │  Tailwind CSS v4 + Lucide Icons     │
-                              │  React Router DOM v7 + Context API  │
-                              └──────────────────┬──────────────────┘
-                                                 │ HTTP / JSON
-                                                 ▼
-                              ┌─────────────────────────────────────┐
-                              │      Node.js + Express REST API     │
-                              │       JWT Auth Middleware + RBAC    │
-                              │    Slot Capacity & Counter Logic    │
-                              └──────────────────┬──────────────────┘
-                                                 │ Mongoose ODM
-                                                 ▼
-                              ┌─────────────────────────────────────┐
-                              │          MongoDB Database           │
-                              │  Users | MenuItems | Orders | Slots │
-                              └─────────────────────────────────────┘
+                              ┌──────────────────────────────────────────┐
+                              │        React.js Frontend (Vite)          │
+                              │  Tailwind CSS v4 • Lucide React Icons    │
+                              │  React Router DOM v7 • Context API       │
+                              └────────────────────┬─────────────────────┘
+                                                   │ HTTP / JSON
+                                                   ▼
+                              ┌──────────────────────────────────────────┐
+                              │      Node.js + Express.js REST API       │
+                              │  JWT Auth & RBAC ('student' | 'admin')   │
+                              │  Capacity Validator • Order Numberer     │
+                              └────────────────────┬─────────────────────┘
+                                                   │ @supabase/supabase-js
+                                                   ▼
+                              ┌──────────────────────────────────────────┐
+                              │        Supabase Cloud (PostgreSQL)       │
+                              │     users • menu_items • pickup_slots    │
+                              │                  orders                  │
+                              └──────────────────────────────────────────┘
 ```
 
 - **Frontend**: React 19, Vite 8, Tailwind CSS v4, Lucide React, React Hot Toast, React Router DOM v7
-- **Backend**: Node.js, Express.js, JWT (`jsonwebtoken`), Password Hashing (`bcryptjs`), CORS
-- **Database**: MongoDB with Mongoose ODM (Schemas for `User`, `MenuItem`, `Order`, `PickupSlot`)
-- **Architecture**: Modular Controller-Service-Route structure, atomic slot capacity checks, automated order numbering (#1000+)
+- **Backend**: Node.js, Express.js REST API, JWT (`jsonwebtoken`), Password Hashing (`bcryptjs`), CORS
+- **Database**: **Supabase** (PostgreSQL) via official `@supabase/supabase-js` SDK (with automatic local in-memory fallback for zero-friction local testing)
+- **Deployment**: Vercel Serverless ready with edge routing (`vercel.json`)
+
+---
+
+## ⚡ Quick 2-Minute Supabase Setup
+
+1. Create a free account and project at **[supabase.com](https://supabase.com)**.
+2. In your Supabase dashboard, go to the **SQL Editor** (left sidebar).
+3. Open the file **`supabase_schema.sql`** in this project, copy all its contents, paste them into the SQL Editor, and click **Run**.
+   - *This automatically creates the 4 tables (`users`, `menu_items`, `pickup_slots`, `orders`), RLS security policies, and default menu & user data!*
+4. Go to **Project Settings** $\rightarrow$ **API** and copy:
+   - **Project URL** $\rightarrow$ `SUPABASE_URL`
+   - **anon / public key** $\rightarrow$ `SUPABASE_ANON_KEY`
+5. In your local `.env` (or Vercel Environment Variables), set:
+   ```env
+   SUPABASE_URL=https://your-project-id.supabase.co
+   SUPABASE_ANON_KEY=your-supabase-anon-key
+   JWT_SECRET=cafeteria_jwt_secret_key_2024
+   ```
 
 ---
 
@@ -52,8 +71,10 @@ A high-performance full-stack MERN (MongoDB, Express.js, React.js, Node.js) web 
 - **Dynamic Menu Grid**:
   - Live category filters: *All, Meals, Breakfast, Snacks, Beverages, Desserts*.
   - Real-time search by item name and description.
-  - Pricing, prep time badges, and high-contrast stock availability chips (*In Stock* vs *Out of Stock*).
-  - Inline add-to-cart and dynamic quantity adjuster.
+  - Pricing in ₹ (*Veg Meals ₹70, Masala Dosa ₹45, Veg Noodles ₹60, Chicken Biryani ₹120, etc.*).
+  - High-contrast stock availability chips (*In Stock* vs *Out of Stock*).
+  - Preparation time chips and category icons.
+  - Interactive cart controls with inline quantity adjusters.
 - **Interactive Cart & Slot Scheduling**:
   - Items summary with quantity increments and deletions.
   - Dedicated **Pickup Time Slot selector** (e.g., 12:15 PM, 12:30 PM) displaying live remaining capacity (`used/maxCapacity`) to prevent peak crowding.
@@ -63,13 +84,10 @@ A high-performance full-stack MERN (MongoDB, Express.js, React.js, Node.js) web 
   - Unique auto-increment order number generation starting from `#1000`.
 - **Live 5-Stage Order Tracking**:
   - Visual animated stepper across 5 distinct phases:
-    1. 🕒 **Pending** (Order Placed)
-    2. 📋 **Accepted** (Cafeteria Confirmed)
-    3. 👨‍🍳 **Preparing** (Fresh Preparation in Progress)
-    4. 🔔 **Ready for Collection** (High-contrast flashing badge)
-    5. 🎉 **Completed** (Handed over)
+    $$\text{Pending} \longrightarrow \text{Accepted} \longrightarrow \text{Preparing} \longrightarrow \text{Ready for Collection} \longrightarrow \text{Completed}$$
+  - Dynamic status-specific alerts and timestamps.
   - Auto-polling every 15 seconds.
-  - Self-cancel option when an order is still in `Pending` state (automatically restores slot capacity).
+  - Self-cancel action available while in `Pending` state (automatically restores slot capacity).
 
 ### 2. Admin & Staff Module
 - **Operational Summary Cards**:
@@ -83,76 +101,28 @@ A high-performance full-stack MERN (MongoDB, Express.js, React.js, Node.js) web 
 - **1-Click Status Controller**:
   - `pending` ➔ **Accept Order** (Blue)
   - `accepted` ➔ **Start Prep** (Orange)
-  - `preparing` ➔ **Mark Ready** (Green)
-  - `ready` ➔ **Complete** (Emerald)
+  - `preparing` ➔ **Mark Ready** (Green pulsing)
+  - `ready` ➔ **Complete** (Dark Emerald)
 - **Menu Management (CRUD)**:
-  - Add new menu items with custom emoji/image, price, category, and estimated prep time.
-  - Inline edit existing items.
+  - Add new menu items with modal form (name, category, price, preparation time, emoji/image).
+  - Inline edit panel for existing items.
   - Single-click **Stock Toggle** (*In-Stock* / *Out-of-Stock*).
   - Soft-delete (hide) menu items.
 - **Queue & Slot Management**:
-  - Reset daily pickup slot bookings with one click for a new cafeteria shift.
+  - Single-click **Reset Daily Slots** button to clear slot capacities for the next shift.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Running the Project
 
-### Prerequisites
-- Node.js (v18 or higher)
-- MongoDB running locally on `mongodb://localhost:27017`
-
-### 1. Database Seeding
-To populate default accounts, 10 menu items, and today's pickup slots:
-```bash
-npm run seed
-```
-
-### 2. Run Both Frontend and Backend Concurrently
-From the project root:
+### Start Both Frontend and Backend Concurrently
 ```bash
 npm run dev
 ```
 - **Backend API**: `http://localhost:5000`
 - **Frontend App**: `http://localhost:5173`
 
----
-
-## 📡 REST API Endpoints
-
-### Authentication (`/api/auth`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/auth/register` | Public | Register new student or user |
-| `POST` | `/api/auth/login` | Public | Sign in and receive JWT token |
-| `GET` | `/api/auth/me` | Protected | Fetch current profile |
-
-### Menu (`/api/menu`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/menu` | Public | Get all active menu items (supports `?category=` and `?search=`) |
-| `GET` | `/api/menu/:id` | Public | Get item details |
-| `POST` | `/api/menu` | Admin | Create new menu item |
-| `PUT` | `/api/menu/:id` | Admin | Update menu item |
-| `DELETE` | `/api/menu/:id` | Admin | Soft-delete / hide menu item |
-| `PATCH` | `/api/menu/:id/toggle` | Admin | Toggle availability (In-Stock / Out-of-Stock) |
-
-### Pickup Slots (`/api/slots`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/slots` | Public | Fetch today's pickup slots with booking counters |
-
-### Orders (`/api/orders`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `POST` | `/api/orders` | Student | Place order with slot reservation |
-| `GET` | `/api/orders/my` | Student | Get user's order history |
-| `GET` | `/api/orders/:id` | Authenticated | Track order by ID (with 5-stage status) |
-| `PATCH` | `/api/orders/:id/cancel`| Student | Cancel order (if still pending) |
-
-### Admin Operations (`/api/admin`)
-| Method | Endpoint | Access | Description |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/api/admin/orders` | Admin | Get all queue pre-orders |
-| `PATCH`| `/api/admin/orders/:id/status` | Admin | Advance order status |
-| `GET` | `/api/admin/stats` | Admin | Counters: total, pending, preparing, ready, completed |
-| `POST` | `/api/admin/slots/reset` | Admin | Reset daily pickup slot bookings |
+### Build for Production (Vercel)
+```bash
+npm run build
+```

@@ -1,28 +1,14 @@
-const MenuItem = require('../models/MenuItem');
+const dbService = require('../services/dbService');
 
 /**
  * @route   GET /api/menu
  * @access  Public
- * @query   category, search
+ * @query   category, search, includeHidden
  */
 const getMenuItems = async (req, res, next) => {
   try {
     const { category, search, includeHidden } = req.query;
-    const filter = {};
-
-    if (includeHidden !== 'true') {
-      filter.isHidden = false;
-    }
-
-    if (category && category !== 'All' && category !== 'all') {
-      filter.category = category.toLowerCase();
-    }
-
-    if (search) {
-      filter.name = { $regex: search, $options: 'i' };
-    }
-
-    const items = await MenuItem.find(filter).sort({ category: 1, name: 1 });
+    const items = await dbService.getMenuItems({ category, search, includeHidden });
 
     res.status(200).json({
       success: true,
@@ -40,7 +26,7 @@ const getMenuItems = async (req, res, next) => {
  */
 const getMenuItem = async (req, res, next) => {
   try {
-    const item = await MenuItem.findById(req.params.id);
+    const item = await dbService.getMenuItemById(req.params.id);
     if (!item || item.isHidden) {
       res.status(404);
       throw new Error('Menu item not found');
@@ -57,24 +43,21 @@ const getMenuItem = async (req, res, next) => {
  */
 const createMenuItem = async (req, res, next) => {
   try {
-    const { name, description, price, category, isAvailable, image, preparationTime } = req.body;
+    const { name, description, price, category, isAvailable, image, emoji, preparationTime } = req.body;
 
     if (!name || price === undefined || !category) {
       res.status(400);
       throw new Error('Name, price, and category are required');
     }
 
-    const finalImage = image || req.body.emoji || '🍽️';
-    const finalCategory = category.toLowerCase();
-
-    const item = await MenuItem.create({
+    const item = await dbService.createMenuItem({
       name,
       description,
       price,
-      category: finalCategory,
-      isAvailable,
-      image: finalImage,
-      preparationTime,
+      category,
+      isAvailable: isAvailable !== false,
+      image: image || emoji || '🍽️',
+      preparationTime: preparationTime || 10,
     });
 
     res.status(201).json({ success: true, data: item });
@@ -89,28 +72,12 @@ const createMenuItem = async (req, res, next) => {
  */
 const updateMenuItem = async (req, res, next) => {
   try {
-    const item = await MenuItem.findById(req.params.id);
-    if (!item) {
+    const updated = await dbService.updateMenuItem(req.params.id, req.body);
+    if (!updated) {
       res.status(404);
       throw new Error('Menu item not found');
     }
 
-    const allowedFields = ['name', 'description', 'price', 'category', 'isAvailable', 'image', 'preparationTime'];
-    allowedFields.forEach((field) => {
-      if (req.body[field] !== undefined) {
-        if (field === 'category' && typeof req.body[field] === 'string') {
-          item[field] = req.body[field].toLowerCase();
-        } else {
-          item[field] = req.body[field];
-        }
-      }
-    });
-
-    if (req.body.emoji && !req.body.image) {
-      item.image = req.body.emoji;
-    }
-
-    const updated = await item.save();
     res.status(200).json({ success: true, data: updated });
   } catch (err) {
     next(err);
@@ -124,15 +91,7 @@ const updateMenuItem = async (req, res, next) => {
  */
 const deleteMenuItem = async (req, res, next) => {
   try {
-    const item = await MenuItem.findById(req.params.id);
-    if (!item) {
-      res.status(404);
-      throw new Error('Menu item not found');
-    }
-
-    item.isHidden = true;
-    await item.save();
-
+    await dbService.deleteMenuItem(req.params.id);
     res.status(200).json({ success: true, message: 'Menu item hidden successfully' });
   } catch (err) {
     next(err);
@@ -140,19 +99,16 @@ const deleteMenuItem = async (req, res, next) => {
 };
 
 /**
- * @route   PATCH /api/menu/:id/availability
+ * @route   PATCH /api/menu/:id/availability & /api/menu/:id/toggle
  * @access  Private/Admin
  */
 const toggleAvailability = async (req, res, next) => {
   try {
-    const item = await MenuItem.findById(req.params.id);
-    if (!item || item.isHidden) {
+    const updated = await dbService.toggleMenuItemAvailability(req.params.id);
+    if (!updated) {
       res.status(404);
       throw new Error('Menu item not found');
     }
-
-    item.isAvailable = !item.isAvailable;
-    const updated = await item.save();
 
     res.status(200).json({
       success: true,

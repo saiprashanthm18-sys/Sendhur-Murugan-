@@ -1,17 +1,21 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const bcrypt = require('bcryptjs');
+const dbService = require('../services/dbService');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'cafeteria_jwt_secret_key_2024';
 
 // Helper: sign JWT
 const signToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  jwt.sign({ id }, JWT_SECRET, { expiresIn: '7d' });
 
 // Helper: build safe user response (strip password)
 const sanitizeUser = (user) => ({
-  _id: user._id,
+  _id: user._id || user.id,
+  id: user.id || user._id,
   name: user.name,
   email: user.email,
   role: user.role,
-  studentId: user.studentId,
+  studentId: user.studentId || '',
   createdAt: user.createdAt,
 });
 
@@ -28,14 +32,22 @@ const register = async (req, res, next) => {
       throw new Error('Name, email, and password are required');
     }
 
-    const existing = await User.findOne({ email: email.toLowerCase() });
+    const existing = await dbService.findUserByEmail(email);
     if (existing) {
       res.status(400);
       throw new Error('Email already in use');
     }
 
-    const user = await User.create({ name, email, password, role, studentId });
-    const token = signToken(user._id);
+    const hashedPassword = bcrypt.hashSync(password, 10);
+    const user = await dbService.createUser({
+      name,
+      email,
+      password: hashedPassword,
+      role: role || 'student',
+      studentId: studentId || ''
+    });
+
+    const token = signToken(user.id);
 
     res.status(201).json({
       success: true,
@@ -60,19 +72,26 @@ const login = async (req, res, next) => {
       throw new Error('Email and password are required');
     }
 
-    const user = await User.findOne({ email: email.toLowerCase() });
+    const user = await dbService.findUserByEmail(email);
     if (!user) {
       res.status(401);
       throw new Error('Invalid email or password');
     }
 
-    const isMatch = await user.comparePassword(password);
+    // Support both bcrypt hashes and plain text passwords (e.g. initial demo seed)
+    let isMatch = false;
+    if (user.password && (user.password.startsWith('$2a$') || user.password.startsWith('$2b$'))) {
+      isMatch = bcrypt.compareSync(password, user.password);
+    } else {
+      isMatch = user.password === password;
+    }
+
     if (!isMatch) {
       res.status(401);
       throw new Error('Invalid email or password');
     }
 
-    const token = signToken(user._id);
+    const token = signToken(user.id);
 
     res.status(200).json({
       success: true,

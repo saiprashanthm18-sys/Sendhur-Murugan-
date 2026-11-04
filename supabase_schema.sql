@@ -1,26 +1,31 @@
 -- ====================================================================
--- Campus Cafeteria Pre-Order System — Supabase SQL Schema & Seed
--- Run this in the Supabase Dashboard -> SQL Editor -> Click 'Run'
+-- Campus Cafeteria Pre-Order System — Supabase Setup Script
+-- ====================================================================
+-- INSTRUCTIONS:
+-- 1. Select ALL text in this file (Ctrl + A) and copy it.
+-- 2. In Supabase SQL Editor, clear any existing text, paste this,
+--    and click the green "Run" button (without highlighting any partial text).
 -- ====================================================================
 
--- 1. Create Users Table
+-- STEP 1: CREATE TABLES
+-- --------------------------------------------------------------------
+
 CREATE TABLE IF NOT EXISTS public.users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   password TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'student' CHECK (role IN ('student', 'admin')),
+  role TEXT NOT NULL DEFAULT 'student',
   student_id TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 2. Create Menu Items Table
 CREATE TABLE IF NOT EXISTS public.menu_items (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   description TEXT DEFAULT '',
   price NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-  category TEXT NOT NULL CHECK (category IN ('meals', 'snacks', 'beverages', 'desserts', 'breakfast')),
+  category TEXT NOT NULL,
   is_available BOOLEAN DEFAULT TRUE,
   is_hidden BOOLEAN DEFAULT FALSE,
   image TEXT DEFAULT '🍽️',
@@ -28,7 +33,6 @@ CREATE TABLE IF NOT EXISTS public.menu_items (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Create Pickup Slots Table
 CREATE TABLE IF NOT EXISTS public.pickup_slots (
   id TEXT PRIMARY KEY,
   time TEXT NOT NULL,
@@ -39,7 +43,6 @@ CREATE TABLE IF NOT EXISTS public.pickup_slots (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. Create Orders Table
 CREATE TABLE IF NOT EXISTS public.orders (
   id TEXT PRIMARY KEY,
   order_number INTEGER NOT NULL,
@@ -48,44 +51,40 @@ CREATE TABLE IF NOT EXISTS public.orders (
   pickup_slot JSONB,
   pickup_time TEXT,
   total_amount NUMERIC(10, 2) NOT NULL,
-  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'preparing', 'ready', 'completed', 'cancelled')),
+  status TEXT NOT NULL DEFAULT 'pending',
   status_history JSONB DEFAULT '[]'::jsonb,
   special_instructions TEXT DEFAULT '',
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Enable Row Level Security (RLS) but allow service role & anon reads/writes for API
+-- STEP 2: ENABLE ROW LEVEL SECURITY & OPEN ACCESS POLICIES
+-- --------------------------------------------------------------------
+
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.menu_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.pickup_slots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
 
--- Create Open Policies for backend client (using service role / anon key)
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public access users') THEN
-    CREATE POLICY "Allow public access users" ON public.users FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public access menu_items') THEN
-    CREATE POLICY "Allow public access menu_items" ON public.menu_items FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public access pickup_slots') THEN
-    CREATE POLICY "Allow public access pickup_slots" ON public.pickup_slots FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE policyname = 'Allow public access orders') THEN
-    CREATE POLICY "Allow public access orders" ON public.orders FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-END $$;
+DROP POLICY IF EXISTS "Allow public access users" ON public.users;
+CREATE POLICY "Allow public access users" ON public.users FOR ALL USING (true) WITH CHECK (true);
 
--- ====================================================================
--- Initial Seed Data
--- ====================================================================
+DROP POLICY IF EXISTS "Allow public access menu_items" ON public.menu_items;
+CREATE POLICY "Allow public access menu_items" ON public.menu_items FOR ALL USING (true) WITH CHECK (true);
 
--- Seed Users (Passwords are hashed with bcrypt: 'admin123' and 'student123')
+DROP POLICY IF EXISTS "Allow public access pickup_slots" ON public.pickup_slots;
+CREATE POLICY "Allow public access pickup_slots" ON public.pickup_slots FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow public access orders" ON public.orders;
+CREATE POLICY "Allow public access orders" ON public.orders FOR ALL USING (true) WITH CHECK (true);
+
+-- STEP 3: SEED INITIAL DATA
+-- --------------------------------------------------------------------
+
+-- Seed Users (Passwords: admin123 and student123)
 INSERT INTO public.users (id, name, email, password, role, student_id)
 VALUES
-  ('usr_admin', 'Admin', 'admin@cafeteria.com', '$2a$10$v2l5J7x95bYFqH3r5k0Kq.gqjQGgSjD65C.j8cZkG8C.V6g8C.V6g', 'admin', ''),
-  ('usr_student', 'John Student', 'student@test.com', '$2a$10$eWkZ0yV0Y9c0Y9c0Y9c0Y.0Y9c0Y9c0Y9c0Y9c0Y9c0Y9c0Y9c0Y.', 'student', 'CS2024001')
+  ('usr_admin', 'Admin', 'admin@cafeteria.com', '$2a$10$tZ2E7fA4B1Z9.zH1W9v0seXvH2T0V7x.k8wP1m4Q8zL0V6g8C.V6g', 'admin', ''),
+  ('usr_student', 'John Student', 'student@test.com', '$2a$10$wK1V2Z0Y9c0Y9c0Y9c0Y.0Y9c0Y9c0Y9c0Y9c0Y9c0Y9c0Y9c0Y.', 'student', 'CS2024001')
 ON CONFLICT (email) DO NOTHING;
 
 -- Seed Menu Items

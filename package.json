@@ -1,0 +1,16 @@
+{
+  "name": "campus-cafeteria-system",
+  "version": "1.0.0",
+  "description": "Campus Cafeteria Pre-Order and Queue Management System (MERN)",
+  "scripts": {
+    "server": "npm --prefix backend run dev",
+    "client": "npm --prefix frontend run dev",
+    "dev": "concurrently \"npm run server\" \"npm run client\"",
+    "start": "concurrently \"npm --prefix backend start\" \"npm --prefix frontend run preview\"",
+    "seed": "node backend/seedData.js",
+    "build": "npm --prefix frontend run build"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
